@@ -17,14 +17,15 @@ function depgraph(pkgname, fmt = :png, output_dir = ".")
     curproj = Pkg.project()
     manif = replace(curproj.path, "Project.toml" => "Manifest.toml")
     root = TOML.parsefile(manif)
-    d = root["deps"]
-    if pkgname ∉ keys(d)
+    rd = root["deps"]
+    if pkgname ∉ keys(rd)
         @error """
-            The given package ($pkgname) must be installed in the active project
-            (which is currently `$(curproj.path)`)"""
+        The given package ($pkgname) must be installed in the active project
+        (which is currently `$(curproj.path)`)"""
         return
     end
-    deps = get_deps(pkgname, d)
+    direct_deps(pkgname) = get(only(rd[pkgname]), "deps", nothing)
+    deps = collect_all_deps(pkgname, direct_deps)
     dot_str = graphviz_DOT_str(deps)
     if is_dot_available()
         in = tempname()
@@ -40,17 +41,16 @@ function depgraph(pkgname, fmt = :png, output_dir = ".")
         clipboard(dot_str)
     end
 end
-function get_deps(pkgname, d, deps = Set())
-    ddeps = get_direct_deps(pkgname, d)
+function collect_all_deps(pkgname, direct_deps, deps = Set())
+    ddeps = direct_deps(pkgname)
     if !isnothing(ddeps)
         for ddep in ddeps
             push!(deps, pkgname => ddep)
-            get_deps(ddep, d, deps)
+            collect_all_deps(ddep, direct_deps, deps)
         end
     end
     return deps
 end
-get_direct_deps(pkgname, d) = get(only(d[pkgname]), "deps", nothing)
 
 function graphviz_DOT_str(edges)
     lines = ["digraph {"]  # DIrected graph
