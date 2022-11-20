@@ -2,8 +2,18 @@ using REPL.TerminalMenus
 using Base: prompt
 using Crayons
 
+# To continue:
+# - make proper newpkg
+# - open editor:
+#   - separate func
+#   - open dir and two files in one code.cmd call [see roam ((C8qOXEev4))]
+
 
 const jldir = joinpath(homedir(), ".julia")
+# ↪ More 'proper' way for same thing: `first(Base.DEPOT_PATH)`
+#   https://docs.julialang.org/en/v1/base/constants/#Base.DEPOT_PATH
+#   "The first entry is the user depot".
+
 const sketches_dir = joinpath(jldir, "sketches")
 
 const green = Crayon(foreground = :green)
@@ -73,6 +83,8 @@ function open_sketch(name)
         edit(script)
         # Open repl history, so you can copy paste from it.
         replhist = joinpath(jldir, "logs", "repl_history.jl")
+        # ↪ More proper way: REPL.find_hist_file()
+        #   (https://docs.julialang.org/en/v1/manual/environment-variables/#JULIA_HISTORY)
         lastline = countlines(replhist)
         edit(replhist, lastline)
     end
