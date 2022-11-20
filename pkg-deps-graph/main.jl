@@ -68,24 +68,24 @@ Render the dependency graph of `pkgname` as a Graphviz DOT string.
 Example output, for `"Unitful"`:
 ```
 digraph {
-    OpenBLAS_jll -> CompilerSupportLibraries_jll
+    Unitful -> ConstructionBase
     ConstructionBase -> LinearAlgebra
     LinearAlgebra -> Libdl
-    libblastrampoline_jll -> Libdl
-    Unitful -> LinearAlgebra
-    CompilerSupportLibraries_jll -> Artifacts
-    Unitful -> Dates
-    Random -> SHA
-    OpenBLAS_jll -> Artifacts
     LinearAlgebra -> libblastrampoline_jll
+    libblastrampoline_jll -> Artifacts
+    libblastrampoline_jll -> Libdl
+    libblastrampoline_jll -> OpenBLAS_jll
+    OpenBLAS_jll -> Artifacts
+    OpenBLAS_jll -> CompilerSupportLibraries_jll
+    CompilerSupportLibraries_jll -> Artifacts
     CompilerSupportLibraries_jll -> Libdl
-    Unitful -> ConstructionBase
-    Unitful -> Random
+    OpenBLAS_jll -> Libdl
+    Unitful -> Dates
     Dates -> Printf
     Printf -> Unicode
-    libblastrampoline_jll -> Artifacts
-    libblastrampoline_jll -> OpenBLAS_jll
-    OpenBLAS_jll -> Libdl
+    Unitful -> LinearAlgebra
+    Unitful -> Random
+    Random -> SHA
     Random -> Serialization
 }
 ```
@@ -102,30 +102,29 @@ currently active project.
 The returned `deps` object is a flat list of `"PkgA" => "PkgB"` dependency pairs.
 """
 function depgraph(pkgname)
-    pkgname = string(pkgname)
+    rootpkg = string(pkgname)
     curproj = Pkg.project()
-    manif = replace(curproj.path, "Project.toml" => "Manifest.toml")
-    root = TOML.parsefile(manif)
-    rd = root["deps"]
-    if pkgname ∉ keys(rd)
+    mpath = replace(curproj.path, "Project.toml" => "Manifest.toml")
+    manif = TOML.parsefile(mpath)
+    packages = manif["deps"]
+    if rootpkg ∉ keys(packages)
         error("""
         The given package ($pkgname) must be installed in the active project
         (which is currently `$(curproj.path)`)""")
     end
-    direct_deps(pkgname) = get(only(rd[pkgname]), "deps", nothing)
-    deps = _collect_deps(pkgname, direct_deps)
-    return deps
-end
-function _collect_deps(pkgname, get_direct_deps, deps = Set())
-    direct_deps = get_direct_deps(pkgname)
-    if !isnothing(direct_deps)
-        for ddep in direct_deps
-            push!(deps, pkgname => ddep)
-            _collect_deps(ddep, get_direct_deps, deps)
+    deps = []
+    function add_deps_of(name)
+        pkg_info = only(packages[name])  # Two packages with same name not supported.
+        direct_deps = get(pkg_info, "deps", [])
+        for dep in direct_deps
+            push!(deps, name => dep)
+            add_deps_of(dep)
         end
     end
-    return deps
+    add_deps_of(rootpkg)
+    return unique!(deps)  # Could use a SortedSet instead; but this spares a pkg load.
 end
+
 
 """
     to_DOT_str(edges)
