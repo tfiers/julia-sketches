@@ -1,39 +1,79 @@
 using REPL.TerminalMenus
+using Base: prompt
+using Crayons
 
-options = []
-menu = RadioMenu(options)
-choice = request(menu)
+
+const jldir = joinpath(homedir(), ".julia")
+const sketches_dir = joinpath(jldir, "sketches")
+
+const green = Crayon(foreground = :green)
 
 
 """
-    @sketch "wack-idea"
-
 Create a new 'sketch', or open an existing one. A sketch is a julia script plus project: for
 when you want more than just the repl but less than a package.
 """
-macro sketch(name)
-    print("Working on it … ")
-    @assert typeof(name) ∈ [String, Symbol]
-    :( _sketch($(string(name))) )
+function sketch(is_first_call = false)
+    if is_first_call
+        println("done")  # = completion of line printed in `@sk` in startup.jl.
+    end
+    name = select_sketch()
+    if isnothing(name)
+        return
+    else
+        open_sketch(name)
+    end
 end
 
-function _sketch(sketch_name::String)
-    sketches_dir = joinpath(homedir(), ".julia", "sketches")
+function select_sketch()
     mkpath(sketches_dir)
     cd(sketches_dir)
-    edit(".")  # Open vs code in sketches root: git repo is there.
-    mkpath(sketch_name)
-    cd(sketch_name)
-    println("ok")
-    printstyled("  Changing", color = :green)
-    println(" current directory to, and")
+	names = readdir()
+    sketchdirs = [name for name in names
+        if isdir(name)
+            && first(name) !== '.'  # filter .git/ and .vscode/
+    ]
+    new = "[new sketch]"
+    options = [new; sketchdirs]
+    menu = RadioMenu(options)
+    choice = request("Select sketch to open:\n", menu)
+    println()
+    if choice == -1  # User quit (`q` or ctrl-c)
+        return nothing
+    end
+    selection = options[choice]
+    if selection == new
+        sketchname = prompt("Name of new sketch")
+    else
+        sketchname = selection
+    end
+    return sketchname
+end
+
+function open_sketch(name)
+    println("Opening `", (name), "`\n")
+    mkpath(sketches_dir)
+    cd(sketches_dir)
+    mkpath(name)
+    cd(name)
+    println("  ", ("Changing"), " current directory to and")
     Pkg.activate(".")  # "  Activating new project at …"
+    println()
     script = "main.jl"
-    touch(script)
-    edit(script)
-    include_str = "include(\"$script\")"
-    clipboard(include_str)  # To paste in repl
-    print("  `")
-    printstyled(include_str, color = :green)
-    println("` written to clipboard")
+    if !isfile(script)
+        contents = """
+        # To run, yank the following to the repl
+        include(\"$script\")
+        """
+        write(script, contents)
+    end
+    choice = prompt("Open editor? [y]/n")
+    if choice != "n"
+        edit(sketches_dir)  # Open vs code in sketches root: git repo is there.
+        edit(script)
+        # Open repl history, so you can copy paste from it.
+        replhist = joinpath(jldir, "logs", "repl_history.jl")
+        lastline = countlines(replhist)
+        edit(replhist, lastline)
+    end
 end
