@@ -1,19 +1,22 @@
 using Pkg
 using TOML
 using URIs: escapeuri
+using Crayons
+
+const green = Crayon(foreground = :green)
 
 
 """
-    create_depgraph_img(pkgname, fmt = :png, output_dir = ".")
+    depsimg(pkgname, fmt = :png, output_dir = ".")
 
-Render the dependency graph of `pkgname` as an image in `output_dir`. Uses  the external
-program `dot` (https://graphviz.org/), which must be available on `PATH`.
+Render the dependency graph of the given package as an image in `output_dir`. Uses the
+external program '`dot`' (https://graphviz.org/), which must be available on `PATH`.
 
-`fmt` is an output file format supported by `dot`, such as `svg` or `png`.
+`fmt` is an output file format supported by dot, such as svg or png.
 
-The `pkgname` package must be installed in the currently active project.
+The given package must be installed in the currently active project.
 """
-function create_depgraph_img(pkgname, fmt = :png, output_dir = ".")
+function depsimg(pkgname, fmt = :png, output_dir = ".")
     if !is_dot_available()
         error("`dot` program not found on `PATH`. Get it at https://graphviz.org/download/")
     end
@@ -23,67 +26,52 @@ function create_depgraph_img(pkgname, fmt = :png, output_dir = ".")
 end
 
 
-default_online_renderer::String = "https://dreampuf.github.io/GraphvizOnline/#"
+online_renderer::String = "https://dreampuf.github.io/GraphvizOnline/#"
 """
-    copy_depgraph_url(pkgname; kw...)
+    depsurl(pkgname; kw...)
 
 Copy a URL to the clipboard at which the dependency graph of `pkgname` is rendered as an
-image, using an online Graphviz rendering sevice. The `pkgname` package must be installed in
-the currently active project.
+image, using an online Graphviz rendering sevice. The given package must be installed in the
+currently active project.
 
 ## How it works
 
 The dependency graph is rendered as a Graphviz DOT string. This string is URL-encoded, and
-appended to a partly-complete URL that is specified by the `renderer` keyword argument. By
-default, this is the global '`default_online_renderer`' (https://dreampuf.github.io/GraphvizOnline/#).
-Some other options:
+appended to a partly-complete URL that is specified by the `renderer` keyword argument.
+Some options:
+- https://dreampuf.github.io/GraphvizOnline/#  (default)
 - https://edotor.net/?engine=dot#
 - http://magjac.com/graphviz-visual-editor/?dot=
+
+The default can be changed by setting the mutable global '`online_renderer`'.
 """
-function copy_depgraph_url(pkgname; renderer = default_online_renderer)
+function depsurl(pkgname; renderer = online_renderer)
     DOT_str = deps_as_DOT(pkgname)
     url = renderer * escapeuri(DOT_str)
     clipboard(url)
-    printstyled("Copied to clipboard: ", color=:green)
-    println(trunc(url, 60))
-    printstyled("This link contains the following Graphviz DOT string: \n", color=:green)
+    println(green("Copied to clipboard: "), trunc(url, 60))
+    println(green("This link contains the following Graphviz DOT string:"))
     print(DOT_str)
-    printstyled("Paste it in the browser to visualize the dependency graph.", color=:green)
+    println(green("Paste it in the browser to visualize the dependency graph."))
     return url
 end
-function trunc(x::String, nstart, ntail = 0; ellipsis = "…(truncated)")
-    max_len = nstart + length(ellipsis) + ntail
-    if length(x) > max_len
-        return x[1:nstart] * ellipsis * x[end-ntail+1:end]
-    else
-        return x
+trunc(str, n; ellipsis = "…(truncated)") =
+    if (length(str) > n + length(ellipsis))  str[1:n] * green(ellipsis)
+    else                                     str
     end
-end
 
 """
     deps_as_DOT(pkgname)
 
 Render the dependency graph of `pkgname` as a Graphviz DOT string.
 
-Example output, for `"Unitful"`:
+Example output (truncated), for `"Unitful"`:
 ```
 digraph {
     Unitful -> ConstructionBase
     ConstructionBase -> LinearAlgebra
     LinearAlgebra -> Libdl
-    LinearAlgebra -> libblastrampoline_jll
-    libblastrampoline_jll -> Artifacts
-    libblastrampoline_jll -> Libdl
-    libblastrampoline_jll -> OpenBLAS_jll
-    OpenBLAS_jll -> Artifacts
-    OpenBLAS_jll -> CompilerSupportLibraries_jll
-    CompilerSupportLibraries_jll -> Artifacts
-    CompilerSupportLibraries_jll -> Libdl
-    OpenBLAS_jll -> Libdl
-    Unitful -> Dates
-    Dates -> Printf
-    Printf -> Unicode
-    Unitful -> LinearAlgebra
+    ⋮
     Unitful -> Random
     Random -> SHA
     Random -> Serialization
@@ -129,9 +117,8 @@ end
 """
     to_DOT_str(edges)
 
-Build a string that represents the given directed graph in the Graphviz DOT format [1].
-
-[1]: https://graphviz.org/doc/info/lang.html
+Build a string that represents the given directed graph in the Graphviz DOT format
+(https://graphviz.org/doc/info/lang.html).
 
 ## Example:
 
