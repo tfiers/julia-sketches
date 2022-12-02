@@ -1,69 +1,83 @@
 using Pkg
 using TOML
+using Base: active_project
 using URIs: escapeuri
-using Crayons
-
-const green = Crayon(foreground = :green)
+using DefaultApplication
 
 
 """
-    depsimg(pkgname, fmt = :png, output_dir = ".")
+    depgraph(pkgname)
 
-Render the dependency graph of the given package as an image in `output_dir`. Uses the
-external program '`dot`' (https://graphviz.org/), which must be available on `PATH`.
+Open the browser to an image of `pkgname`'s dependency graph.\\
+The given package must be installed in the currently active project.
+
+To render the dependency graph using a local Graphviz `dot` installation (instead of an
+online Graphviz renderer), use [`depgraph_local`](@ref).
+
+For more info, see [`depgraph_url`](@ref).
+"""
+depgraph(pkgname) = begin
+    DefaultApplication.open(depgraph_url(pkgname))
+    # ↪ Passing a url opens the browser on all platforms. (Even though that is undocumented:
+    #   https://github.com/tpapp/DefaultApplication.jl/issues/12)
+    return nothing
+end
+
+
+"""
+    depgraph_local(pkgname, dir = tempdir(); fmt = :png)
+
+Render the dependency graph of the given package as an image in `dir`, and open it with your
+default image viewer. Uses the external program '`dot`' (https://graphviz.org), which must
+be available on `PATH`.
 
 `fmt` is an output file format supported by dot, such as svg or png.
-
-The given package must be installed in the currently active project.
 """
-function depsimg(pkgname, fmt = :png, output_dir = ".")
+depgraph_local(pkgname, dir = tempdir(); fmt = :png) = begin
     if !is_dot_available()
         error("`dot` program not found on `PATH`. Get it at https://graphviz.org/download/")
     end
-    DOT_str = deps_as_DOT(pkgname)
-    fname = "$pkgname-deps.$fmt"
-    create_DOT_image(DOT_str, fmt, output_dir, fname)
+    dotstr = deps_as_DOT(pkgname)
+    imgname = "$pkgname-deps.$fmt"
+    imgpath = joinpath(dir, imgname)
+    create_DOT_image(dotstr, fmt, imgpath)
+    DefaultApplication.open(imgpath)
+    return nothing
 end
 
 
-online_renderer::String = "https://dreampuf.github.io/GraphvizOnline/#"
-"""
-    depsurl(pkgname; kw...)
+const rendering_urls = [
+    "https://dreampuf.github.io/GraphvizOnline/#",     # Default
+    "http://magjac.com/graphviz-visual-editor/?dot=",  # Linked from graphviz.org. Many features.
+    "https://edotor.net/?engine=dot#",
+]
+default_rendering_url::String = first(rendering_urls)
 
-Copy a URL to the clipboard at which the dependency graph of `pkgname` is rendered as an
-image, using an online Graphviz rendering sevice. The given package must be installed in the
-currently active project.
+"""
+    depgraph_url(pkgname; renderer = default_rendering_url)
+
+Create a URL at which the dependency graph of `pkgname` is rendered as an image, using an
+online Graphviz rendering service.
 
 ## How it works
+The dependency graph of `pkgname` is created locally, and converted to a string in the
+Graphviz DOT format (see [`deps_as_DOT`](@ref)). This string is URL-encoded, and appended to
+a partly-complete URL that is specified by the `renderer` keyword argument.
 
-The dependency graph is rendered as a Graphviz DOT string. This string is URL-encoded, and
-appended to a partly-complete URL that is specified by the `renderer` keyword argument.
-Some options:
-- https://dreampuf.github.io/GraphvizOnline/#  (default)
-- https://edotor.net/?engine=dot#
-- http://magjac.com/graphviz-visual-editor/?dot=
-
-The default can be changed by setting the mutable global '`online_renderer`'.
+The default renderer is the first entry in the global `rendering_urls` list. To use a
+different rendering website, supply the `renderer` keyword argument, or set the mutable
+global `default_rendering_url`.
 """
-function depsurl(pkgname; renderer = online_renderer)
-    DOT_str = deps_as_DOT(pkgname)
-    url = renderer * escapeuri(DOT_str)
-    clipboard(url)
-    println(green("Copied to clipboard: "), trunc(url, 60))
-    println(green("This link contains the following Graphviz DOT string:"))
-    print(DOT_str)
-    println(green("Paste it in the browser to visualize the dependency graph."))
-    return url
+depgraph_url(pkgname; renderer = default_rendering_url) = begin
+    dotstr = deps_as_DOT(pkgname)
+    url = renderer * escapeuri(dotstr)
 end
-trunc(str, n; ellipsis = "…(truncated)") =
-    if (length(str) > n + length(ellipsis))  str[1:n] * green(ellipsis)
-    else                                     str
-    end
+
 
 """
     deps_as_DOT(pkgname)
 
-Render the dependency graph of `pkgname` as a Graphviz DOT string.
+Create the dependency graph of `pkgname` and render it as a Graphviz DOT string.
 
 Example output (truncated), for `"Unitful"`:
 ```
@@ -77,31 +91,29 @@ digraph {
     Random -> Serialization
 }
 ```
+For more info, see [`create_depgraph`](@ref) and [`to_DOT_str`](@ref).
 """
-deps_as_DOT(pkgname) = depgraph(pkgname) |> to_DOT_str
+deps_as_DOT(pkgname) = create_depgraph(pkgname) |> to_DOT_str
 
 
 """
-    deps = depgraph(pkgname)
+    deps = create_depgraph(pkgname)
 
-Build a graph of the dependencies of the given package, which must be installed in the
-currently active project.
+Build a graph of the dependencies of the given package, using the active project's Manifest
+file.
 
 The returned `deps` object is a flat list of `"PkgA" => "PkgB"` dependency pairs.
 """
-function depgraph(pkgname)
+create_depgraph(pkgname) = begin
     rootpkg = string(pkgname)
-    curproj = Pkg.project()
-    mpath = replace(curproj.path, "Project.toml" => "Manifest.toml")
-    manif = TOML.parsefile(mpath)
-    packages = manif["deps"]
+    packages = packages_in_active_manifest()
     if rootpkg ∉ keys(packages)
         error("""
         The given package ($pkgname) must be installed in the active project
         (which is currently `$(curproj.path)`)""")
     end
     deps = []
-    function add_deps_of(name)
+    add_deps_of(name) = begin
         pkg_info = only(packages[name])  # Two packages with same name not supported.
         direct_deps = get(pkg_info, "deps", [])
         for dep in direct_deps
@@ -112,6 +124,10 @@ function depgraph(pkgname)
     add_deps_of(rootpkg)
     return unique!(deps)  # Could use a SortedSet instead; but this spares a pkg load.
 end
+
+manifest(proj_path) = replace(proj_path, "Project.toml" => "Manifest.toml")
+packages_in(manifest) = TOML.parsefile(manifest)["deps"]
+packages_in_active_manifest() = packages_in(manifest(active_project()))
 
 
 """
@@ -125,7 +141,7 @@ Build a string that represents the given directed graph in the Graphviz DOT form
 ```jldoctest
 julia> edges = [:A => :B, "yes" => "no"];
 
-julia> to_DOT_str(edges) |> println;
+julia> to_DOT_str(edges) |> println
 digraph {
     A -> B
     yes -> no
@@ -151,10 +167,9 @@ function is_dot_available()
     return success(proc)
 end
 
-function create_DOT_image(DOT_str, fmt, dir, fname)
+function create_DOT_image(DOT_str, fmt, path)
     dotfile = tempname()
     write(dotfile, DOT_str)
-    imgfile = joinpath(abspath(dir), fname)
     run(`dot -T$fmt -o$imgfile $dotfile`)
-    println("Created ", relpath(imgfile))
+    println("Created ", relpath(path))
 end
