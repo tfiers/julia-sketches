@@ -1,13 +1,10 @@
+
+# [See bottom for to-continue / wishlist]
+
+
 using REPL.TerminalMenus
 using Base: prompt
 using Crayons
-
-# To continue:
-# - make proper newpkg
-# - open editor:
-#   - separate func
-#   - open dir and two files in one code.cmd call [see roam ((C8qOXEev4))]
-
 
 const jldir = joinpath(homedir(), ".julia")
 # ↪ More 'proper' way for same thing: `first(Base.DEPOT_PATH)`
@@ -89,3 +86,16 @@ function open_sketch(name)
         edit(replhist, lastline)
     end
 end
+
+
+# To continue:
+# - make proper newpkg
+# - open editor:
+#   - extract current to a func
+#   - open dir and two files in one code.cmd call [see roam ((C8qOXEev4))]
+# - A module already, no (so you can Revise)
+# - Related: don't name file 'main'
+# - Instead of just opening repl history, parse it [e.g. last hour -- or
+#   let user choose :)], delete comments, paste in new src file.
+#   (right now: annoying to ctrl-d the "# " lines :p, and to find
+#    where to scroll back to).
