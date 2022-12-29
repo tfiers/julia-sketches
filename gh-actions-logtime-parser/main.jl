@@ -1,3 +1,5 @@
+using Dates
+using Printf
 
 raw = """
 Thu, 29 Dec 2022 11:21:11 GMT <makedocs> (Including Documenter.HTML(…) construction call)
@@ -11,3 +13,29 @@ Thu, 29 Dec 2022 11:43:37 GMT RenderDocument: rendering document.
 Thu, 29 Dec 2022 11:43:39 GMT HTMLWriter: rendering HTML pages.
 Thu, 29 Dec 2022 11:45:19 GMT </makedocs>
 """
+
+lines = split(strip(raw), "\n")
+
+deleteat!(lines, 1)
+
+splits = split.(lines, " GMT ")
+datetime_strs = first.(splits)
+messages = last.(splits)
+
+datetimes = DateTime.(datetime_strs, dateformat"e, d u y H:M:S")
+
+diffs = diff(datetimes)
+
+for (msg, dt) in zip(messages, diffs)
+    # messages is one longer than diffs. That's ✔
+    type, descr = split(msg, " ", limit=2)
+    dt = Second(dt)
+    print(
+        lpad(type, 20), " | ",
+        lpad(dt, 12), " | ",
+    )
+    if dt > Minute(1)
+        print("(", round(dt, Minute), ")")
+    end
+    println()
+end
